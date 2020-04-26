@@ -222,10 +222,11 @@ int main(int argc, char *argv[]){
         fprintf(stderr,"Usage: %s <output file>\n", argv[0]);
         exit(1);
     }
-    if(!srReceiveFile(argv[1],9003)){
+    if(!srReceiveFile(argv[1],SERVER_PORT)){
         fprintf(stderr,"Some Error Occurred!\n");
         close(outputFd);
         close(sockfd);
         return -1;
     }
+    return 0;
 }

@@ -16,6 +16,18 @@
 #include <sys/time.h>
 #include <stdbool.h>
 
+/*
+ * Tests whether strings s1 and s2 are equal
+ */
+bool equals(char *s1, char *s2){
+    if(s1 == NULL && s2 == NULL)
+        return true;
+    else if(s1 == NULL || s2 == NULL)
+        return false;
+    else
+        return (strcmp(s1,s2) == 0);
+}
+
 uint mdval(uint seq) {
     return (seq%WINDOW_SIZE);
 }
@@ -81,16 +93,17 @@ void convMilliSec2Timeval(double milliSec, struct timeval *tv){
     tv->tv_usec = usec % 1000000;
 }
 
-double findRemainingTime(struct timeval *startTime, struct timeval *remainingTime){
+double findRemainingTime(struct timeval *startTime, struct timeval *remainingTime, double delayMS) {
     struct timeval currTime, tmpDiff;
     gettimeofday(&currTime,NULL);
     timerclear(remainingTime);
     timersub(&currTime,startTime,&tmpDiff);
-    if(convTimeval2MilliSec(&tmpDiff) < TIMEOUT_MILLISECONDS){
+    if(convTimeval2MilliSec(&tmpDiff) < delayMS){
         struct timeval timeoutVal;
-        convMilliSec2Timeval(TIMEOUT_MILLISECONDS,&timeoutVal);
+        convMilliSec2Timeval(delayMS,&timeoutVal);
         timersub(&timeoutVal,&tmpDiff,remainingTime);
         return convTimeval2MilliSec(remainingTime);
     } else
         return 0;
 }
+

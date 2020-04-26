@@ -5,6 +5,11 @@ typedef unsigned int uint;
 #include "packet.h"
 #include <sys/time.h>
 
+
+
+
+bool equals(char *s1, char *s2);
+
 uint mdval(uint seq);
 
 uint mdadd(uint seq, uint val);
@@ -31,7 +36,7 @@ double convTimeval2MilliSec(struct timeval *tv);
 
 void convMilliSec2Timeval(double milliSec, struct timeval *tv);
 
-double findRemainingTime(struct timeval *startTime, struct timeval *remainingTime);
+double findRemainingTime(struct timeval *startTime, struct timeval *remainingTime, double delayMS);
 
 
 #endif //CNP2_UTILS_H

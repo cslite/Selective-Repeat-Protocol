@@ -34,6 +34,24 @@ void initClientGlobals(){
     memset(sentPkt,0,sizeof(sentPkt));
 }
 
+bool initClientSocket(struct sockaddr_in *sa, int cliPort){
+    bzero(sa,sizeof(*sa));
+    sockfd = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
+    if(sockfd < 0){
+        perror("initClientSocket");
+        return false;
+    }
+    sa->sin_family = AF_INET;
+    sa->sin_addr.s_addr = htonl(INADDR_ANY);
+    sa->sin_port = htons(cliPort);
+    if(bind(sockfd, (struct sockaddr *) sa,sizeof(*sa))<0){
+        fprintf(stderr,"initSocket: Error in binding client socket.\n");
+        return false;
+    }
+    fprintf(stdout,"Client now bound to port %d.\n",cliPort);
+    return true;
+}
+
 void init2RelayAddr(struct sockaddr_in relayAddr[], int port1, int port2){
     //init first relayAddr
     bzero(&(relayAddr[0]),sizeof(relayAddr[0]));
@@ -143,7 +161,7 @@ bool advanceSendBase(struct sockaddr_in relayAddr[]){
     return true;
 }
 
-bool srSendFile(char *fileName, int relay1port, int relay2port) {
+bool srSendFile(char *fileName, int relay1port, int relay2port, int cliPort) {
     //check for errors in file
     if (fileName == NULL) {
         fprintf(stderr, "srSendFile: Invalid file name received.\n");
@@ -159,11 +177,9 @@ bool srSendFile(char *fileName, int relay1port, int relay2port) {
     }
 
     struct sockaddr_in relayAddr[2];
-    sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if(sockfd < 0){
-        perror("socket");
+    struct sockaddr_in cliAddr;
+    if(!initClientSocket(&cliAddr,cliPort))
         return false;
-    }
     init2RelayAddr(relayAddr, relay1port, relay2port);
     inputFd = open(fileName, O_RDONLY);
     initClientGlobals();
@@ -220,9 +236,13 @@ bool srSendFile(char *fileName, int relay1port, int relay2port) {
         struct timeval currTimeVal;
         if(DEBUG_MODE)
             fprintf(stderr,"[DEBUG]: Checking if there are any timeouts.\n");
-        for (uint i = mdval(sendBase); i != mdval(nextSeqNum); i = mdadd(i, 1)) {
+        for (uint i = 0; i < WINDOW_SIZE; i++) {
+//            if(DEBUG_MODE)
+//                fprintf(stderr,"[DEBUG]: i = %u\n",i);
             if (sentPkt[i] != NULL) {
-                currTime = findRemainingTime(&sentPktTime[i], &currTimeVal);
+                currTime = findRemainingTime(&sentPktTime[i], &currTimeVal, TIMEOUT_MILLISECONDS);
+                if(DEBUG_MODE)
+                    fprintf(stderr,"[DEBUG]: Pkt with seq %u has %lf time remaining.\n",sentPkt[i]->seq,currTime);
                 if (currTime == 0) {
                     //timeout for this packet
                     if(DEBUG_MODE)
@@ -230,7 +250,7 @@ bool srSendFile(char *fileName, int relay1port, int relay2port) {
                     if (!sendDataPkt(sentPkt[i], relayAddr))
                         return false;
                 }
-                if (linit) {
+                else if (linit) {
                     if (currTime < leastTime) {
                         leastTime = currTime;
                         leastTimeVal = currTimeVal;
@@ -257,8 +277,9 @@ int main(int argc, char *argv[]){
         fprintf(stderr,"Usage: %s <input file>\n", argv[0]);
         exit(1);
     }
-    if(!srSendFile(argv[1],RELAY_NODE_1_DEFAULT_PORT,RELAY_NODE_2_DEFAULT_PORT)){
+    if(!srSendFile(argv[1], RELAY_NODE_1_PORT, RELAY_NODE_2_PORT,CLIENT_PORT)){
         fprintf(stderr,"Some Error Occurred!\n");
         return -1;
     }
+    return 0;
 }
