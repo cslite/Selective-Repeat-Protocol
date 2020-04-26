@@ -17,7 +17,7 @@ bool receivedLastPkt;
 bool pendingLastPktWrite;
 char oooBuffer[WINDOW_SIZE][PACKET_SIZE+1];
 bool receivedPkt[WINDOW_SIZE];
-int recvBase;
+uint recvBase;
 int sockfd;
 uint lastPktSeqMod;
 
@@ -32,11 +32,13 @@ void initServerGlobals(){
 
 bool initSocket(struct sockaddr_in *sa, int servPort){
     bzero(sa,sizeof(*sa));
-    sockfd = socket(AF_INET,SOCK_DGRAM,0);
+    sockfd = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
     if(sockfd < 0){
         fprintf(stderr,"initSocket: Error in opening socket.\n");
         return false;
     }
+    int en = 1;
+//    setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &en, sizeof(int));
     sa->sin_family = AF_INET;
     sa->sin_addr.s_addr = htonl(INADDR_ANY);
     sa->sin_port = htons(servPort);
@@ -50,18 +52,26 @@ bool initSocket(struct sockaddr_in *sa, int servPort){
 
 //checks if the packet belongs to our window or not
 bool isPktInRecvWindow(uint seq){
-    if(seq >= recvBase && seq <= (recvBase+WINDOW_SIZE-1))
+    if(seq >= recvBase || seq <= md2add(recvBase,WINDOW_SIZE-1))
         return true;
     else
         return false;
+//    if(seq >= recvBase && seq <= (recvBase+WINDOW_SIZE-1))
+//        return true;
+//    else
+//        return false;
 }
 
 //checks if this packet was received again
 bool isPktRetransmitted(uint seq){
-    if(seq < recvBase)
+    if(seq >= md2sub(recvBase,WINDOW_SIZE) || seq <= md2sub(recvBase,1))
         return true;
     else
         return false;
+//    if(seq < recvBase)
+//        return true;
+//    else
+//        return false;
 }
 
 bool loadDataOnBuffer(packet *pkt){
@@ -87,12 +97,14 @@ bool processPkt(packet *pkt){
     if(!loadDataOnBuffer(pkt))
         return false;
     if(pkt->seq == recvBase){
+        if(DEBUG_MODE)
+            fprintf(stderr,"[DEBUG]: Moving the receive base.\n");
         //time to move the window
         uint start = mdval(pkt->seq);
         uint i = start;
         do{
             if(receivedPkt[i]){
-                recvBase++;
+                recvBase = md2add(recvBase,1);
                 receivedPkt[i] = false;
                 write(outputFd,oooBuffer[i],strlen(oooBuffer[i]));
                 if(receivedLastPkt && lastPktSeqMod == i)
@@ -111,6 +123,8 @@ bool processPkt(packet *pkt){
 }
 
 bool sendAckPkt(packet *pkt, struct sockaddr_in *cliAddr, uint *cliLen){
+    if(DEBUG_MODE)
+        fprintf(stderr,"[DEBUG]: Sending ACK packet for seq %u.\n",pkt->seq);
     if(pkt == NULL || cliAddr == NULL || cliLen == NULL){
         fprintf(stderr,"sendAckPkt: Received a NULL Node.\n");
         return false;
@@ -152,6 +166,11 @@ bool srReceiveFile(char *saveFileName, int port){
 
     while(pendingLastPktWrite){
         packet tmpPkt;
+        if(DEBUG_MODE)
+            fprintf(stderr,"[DEBUG]: Server ready to receive packet.\n");
+//        fprintf(stderr,"we have sockfd = %d\n",sockfd);
+        bzero(&cliAddr,sizeof(cliAddr));
+        cliLen = sizeof(cliAddr);
         int nread = recvfrom(sockfd,&tmpPkt,sizeof(packet),0,(struct sockaddr *)&cliAddr,&cliLen);
         if(nread < 0){
             perror("recvfrom");
@@ -162,9 +181,13 @@ bool srReceiveFile(char *saveFileName, int port){
             return false;
         }
         //received a packet
+        if(DEBUG_MODE)
+            fprintf(stderr,"[DEBUG]: Pkt with seq %u received.\n",tmpPkt.seq);
         //TODO: log the RECV packet event at SERVER from RelayX
         if(isPktInRecvWindow(tmpPkt.seq)){
             //this packet can be added to buffer
+            if(DEBUG_MODE)
+                fprintf(stderr,"[DEBUG]: Packet is in receiveWindow\n");
             if(tmpPkt.isLastPkt){
                 receivedLastPkt = true;
                 lastPktSeqMod = mdval(tmpPkt.seq);
@@ -191,4 +214,18 @@ bool srReceiveFile(char *saveFileName, int port){
     }
     close(outputFd);
     close(sockfd);
+    return true;
+}
+
+int main(int argc, char *argv[]){
+    if(argc != 2) {
+        fprintf(stderr,"Usage: %s <output file>\n", argv[0]);
+        exit(1);
+    }
+    if(!srReceiveFile(argv[1],9003)){
+        fprintf(stderr,"Some Error Occurred!\n");
+        close(outputFd);
+        close(sockfd);
+        return -1;
+    }
 }

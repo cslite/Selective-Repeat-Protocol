@@ -11,10 +11,10 @@
 #define WINDOW_SIZE 10
 
 #define RELAY_NODE_1_IP "127.0.0.1"
-#define RELAY_NODE_1_DEFAULT_PORT 9001
+#define RELAY_NODE_1_DEFAULT_PORT 9003
 #define RELAY_NODE_2_IP "127.0.0.1"
-#define RELAY_NODE_2_DEFAULT_PORT 9002
+#define RELAY_NODE_2_DEFAULT_PORT 9003
 
-#define uint unsigned int
+#define DEBUG_MODE 1
 
 #endif //CNP2_CONFIG_H

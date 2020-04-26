@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <arpa/inet.h>
 #include <string.h>
 #include <unistd.h>
@@ -16,42 +17,248 @@ int fileSize;
 int sockfd;
 int inputFd;
 int currRead;
-packet *SentPkt[WINDOW_SIZE];
+packet *sentPkt[WINDOW_SIZE];
+struct timeval sentPktTime[WINDOW_SIZE];
+uint sendBase;
+uint nextSeqNum;
+bool morePacketsAvailable;
+struct timeval resetTimeoutValue;
+uint stopSeqNum;
+
+void initClientGlobals(){
+    nextSeqNum = 0;
+    sendBase = 0;
+    morePacketsAvailable = true;
+    currRead = 0;
+    convMilliSec2Timeval(TIMEOUT_MILLISECONDS,&resetTimeoutValue);
+    memset(sentPkt,0,sizeof(sentPkt));
+}
 
 void init2RelayAddr(struct sockaddr_in relayAddr[], int port1, int port2){
     //init first relayAddr
     bzero(&(relayAddr[0]),sizeof(relayAddr[0]));
     relayAddr[0].sin_family = AF_INET;
     relayAddr[0].sin_port = htons(port1);
-    inet_pton(AF_INET,RELAY_NODE_1_IP,&(relayAddr[0].sin_addr));
+    relayAddr[0].sin_addr.s_addr = inet_addr(RELAY_NODE_1_IP);
+
 
     //init second relayAddr
     bzero(&(relayAddr[1]),sizeof(relayAddr[1]));
-    relayAddr[2].sin_family = AF_INET;
-    relayAddr[2].sin_port = htons(port2);
-    inet_pton(AF_INET,RELAY_NODE_2_IP,&(relayAddr[1].sin_addr));
+    relayAddr[1].sin_family = AF_INET;
+    relayAddr[1].sin_port = htons(port2);
+    relayAddr[1].sin_addr.s_addr = inet_addr(RELAY_NODE_2_IP);
+//    inet_pton(AF_INET,RELAY_NODE_2_IP,&(relayAddr[1].sin_addr));
 
 }
 
-bool srSendFile(char *fileName, int relay1port, int relay2port){
-    if(fileName == NULL){
-        fprintf(stderr,"srSendFile: Invalid file name received.\n");
+packet *makeNextPktFromFile(){
+    packet *ptmp = (packet *)malloc(sizeof(packet));
+    initPacket(ptmp);
+    ptmp->seq = nextSeqNum;
+    nextSeqNum = md2add(nextSeqNum,1);
+    ptmp->ptype = DATA_PKT;
+    int actualRead = read(inputFd,ptmp->payload,PACKET_SIZE);
+    if(actualRead < 0){
+        perror("open");
+        free(ptmp);
+        return NULL;
+    }
+    else if(actualRead == 0){
+        free(ptmp);
+        return NULL;
+    }
+    ptmp->size = actualRead;
+    currRead += actualRead;
+    if(currRead == fileSize){
+        ptmp->isLastPkt = true;
+        morePacketsAvailable = false;
+        stopSeqNum = md2add(ptmp->seq,1);
+    }
+    else
+        ptmp->isLastPkt = false;
+    return ptmp;
+}
+
+bool isPktInSendWindow(uint seq){
+    if(seq >= sendBase || seq < md2add(sendBase,WINDOW_SIZE))
+        return true;
+    else
+        return false;
+}
+
+bool sendDataPkt(packet *pkt, struct sockaddr_in relayAddr[]){
+    if(pkt == NULL)
+        return false;
+    int destIdx = (pkt->seq) % 2 ? 0 : 1;
+    int ret;
+
+
+    if((ret = sendto(sockfd,pkt,sizeof(packet),0,(struct sockaddr*)(relayAddr+destIdx),sizeof(relayAddr[destIdx]))) <= 0){
+        fprintf(stderr,"sendto returned %d\n",ret);
+        perror("sendto");
+        return false;
+    }
+    uint idx = mdval(pkt->seq);
+    gettimeofday(&sentPktTime[idx],NULL);
+    sentPkt[idx] = pkt;
+    //TODO: log SEND event
+    if(DEBUG_MODE)
+        fprintf(stderr,"[DEBUG]: SENT PKT: Seq No. %u of size %u bytes.\n",pkt->seq,pkt->size);
+    return true;
+}
+
+bool receiveAckPkt(packet *pkt){
+    struct sockaddr_in cliAddr;
+    unsigned int clilen;
+    int nread;
+    if((nread = recvfrom(sockfd,pkt,sizeof(packet),0,(struct sockaddr*)&cliAddr,&clilen)) < 0){
+        perror("recvfrom");
+        return false;
+    }
+    else if(nread == 0){
+        fprintf(stderr,"recvfrom returned 0.\n");
+        return false;
+    }
+    if(DEBUG_MODE)
+        fprintf(stderr,"[DEBUG]: ACK with seq %u received.\n",pkt->seq);
+    return true;
+}
+
+bool advanceSendBase(struct sockaddr_in relayAddr[]){
+    do{
+        if(sentPkt[mdval(sendBase)] == NULL){
+            sendBase = md2add(sendBase,1);
+            //can send additional packet
+            if (morePacketsAvailable) {
+                packet *nextPkt = makeNextPktFromFile();
+                if (!sendDataPkt(nextPkt, relayAddr))
+                    return false;
+            }
+        }
+        else
+            break;
+    }while(sendBase != nextSeqNum);
+    if(DEBUG_MODE)
+        fprintf(stderr,"[DEBUG]: sendBase now at %u\n",sendBase);
+    return true;
+}
+
+bool srSendFile(char *fileName, int relay1port, int relay2port) {
+    //check for errors in file
+    if (fileName == NULL) {
+        fprintf(stderr, "srSendFile: Invalid file name received.\n");
         return false;
     }
     fileSize = getFileSize(fileName);
-    if(fileSize == -1){
-        fprintf(stderr,"srSendFile: Cannot open file '%s'.\n",fileName);
+    if (fileSize == -1) {
+        fprintf(stderr, "srSendFile: Cannot open file '%s'.\n", fileName);
         return false;
-    }
-    else if(fileSize == 0){
-        fprintf(stderr,"srSendFile: File '%s' is empty.\n",fileName);
+    } else if (fileSize == 0) {
+        fprintf(stderr, "srSendFile: File '%s' is empty.\n", fileName);
         return false;
     }
 
     struct sockaddr_in relayAddr[2];
-    sockfd = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
-    init2RelayAddr(relayAddr,relay1port,relay2port);
+    sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if(sockfd < 0){
+        perror("socket");
+        return false;
+    }
+    init2RelayAddr(relayAddr, relay1port, relay2port);
+    inputFd = open(fileName, O_RDONLY);
+    initClientGlobals();
+    fd_set rset, rset0;
+    FD_ZERO(&rset0);
+    FD_SET(sockfd, &rset0);
+    packet *nextPkt;
 
-    inputFd = open(fileName,O_RDONLY);
+    if(DEBUG_MODE)
+        fprintf(stderr,"[DEBUG]: Client ready to send initial packets.\n");
 
+    //send initial packets
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        if (morePacketsAvailable) {
+            nextPkt = makeNextPktFromFile();
+            if (!sendDataPkt(nextPkt, relayAddr))
+                return false;
+//            sleep(20);
+        } else break;
+    }
+
+    struct timeval timeRemaining = resetTimeoutValue;
+    while (morePacketsAvailable || sendBase != stopSeqNum) {
+        rset = rset0;
+        int nsel = select(sockfd + 1, &rset, NULL, NULL, &timeRemaining);
+
+        if (FD_ISSET(sockfd, &rset)) {
+            if(DEBUG_MODE)
+                fprintf(stderr,"[DEBUG]: Some ACK is available for reading.\n");
+            //ack available
+            packet tmpPkt;
+            if (!receiveAckPkt(&tmpPkt))
+                return false;
+            if (isPktInSendWindow(tmpPkt.seq)) {
+                if(DEBUG_MODE)
+                    fprintf(stderr,"[DEBUG]: ACK %u is in SendWindow.\n",tmpPkt.seq);
+                uint idx = mdval(tmpPkt.seq);
+                free(sentPkt[idx]);
+                sentPkt[idx] = NULL;
+                if (tmpPkt.seq == sendBase) {
+                    if(DEBUG_MODE)
+                        fprintf(stderr,"[DEBUG]: sendBase can be moved.\n");
+                    if (!advanceSendBase(relayAddr))
+                        return false;
+                }
+            } else {
+                //discard packet
+            }
+        }
+
+        bool linit = false;
+        double leastTime = TIMEOUT_MILLISECONDS, currTime;
+        struct timeval leastTimeVal = resetTimeoutValue;
+        struct timeval currTimeVal;
+        if(DEBUG_MODE)
+            fprintf(stderr,"[DEBUG]: Checking if there are any timeouts.\n");
+        for (uint i = mdval(sendBase); i != mdval(nextSeqNum); i = mdadd(i, 1)) {
+            if (sentPkt[i] != NULL) {
+                currTime = findRemainingTime(&sentPktTime[i], &currTimeVal);
+                if (currTime == 0) {
+                    //timeout for this packet
+                    if(DEBUG_MODE)
+                        fprintf(stderr,"[DEBUG]: Timeout for Pkt with seq %u.\n",sentPkt[i]->seq);
+                    if (!sendDataPkt(sentPkt[i], relayAddr))
+                        return false;
+                }
+                if (linit) {
+                    if (currTime < leastTime) {
+                        leastTime = currTime;
+                        leastTimeVal = currTimeVal;
+                    }
+                } else {
+                    linit = true;
+                    leastTime = currTime;
+                    leastTimeVal = currTimeVal;
+                }
+            }
+        }
+        if(DEBUG_MODE)
+            fprintf(stderr,"[DEBUG]: Next return will be within %lf milliseconds.\n",leastTime);
+        timeRemaining = leastTimeVal;
+    }
+
+    close(inputFd);
+    close(sockfd);
+    return true;
+}
+
+int main(int argc, char *argv[]){
+    if(argc != 2) {
+        fprintf(stderr,"Usage: %s <input file>\n", argv[0]);
+        exit(1);
+    }
+    if(!srSendFile(argv[1],RELAY_NODE_1_DEFAULT_PORT,RELAY_NODE_2_DEFAULT_PORT)){
+        fprintf(stderr,"Some Error Occurred!\n");
+        return -1;
+    }
 }

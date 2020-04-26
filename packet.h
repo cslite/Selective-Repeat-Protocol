@@ -2,6 +2,7 @@
 #define CNP2_PACKET_H
 
 #include "config.h"
+#include <stdbool.h>
 
 typedef enum{
     DATA_PKT, ACK_PKT
