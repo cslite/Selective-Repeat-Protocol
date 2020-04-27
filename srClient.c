@@ -24,6 +24,7 @@ uint nextSeqNum;
 bool morePacketsAvailable;
 struct timeval resetTimeoutValue;
 uint stopSeqNum;
+FILE *logFile;
 
 void initClientGlobals(){
     nextSeqNum = 0;
@@ -104,13 +105,11 @@ bool isPktInSendWindow(uint seq){
         return false;
 }
 
-bool sendDataPkt(packet *pkt, struct sockaddr_in relayAddr[]){
+bool sendDataPkt(packet *pkt, struct sockaddr_in relayAddr[], eventType et){
     if(pkt == NULL)
         return false;
     int destIdx = (pkt->seq) % 2 ? 0 : 1;
     int ret;
-
-
     if((ret = sendto(sockfd,pkt,sizeof(packet),0,(struct sockaddr*)(relayAddr+destIdx),sizeof(relayAddr[destIdx]))) <= 0){
         fprintf(stderr,"sendto returned %d\n",ret);
         perror("sendto");
@@ -119,7 +118,8 @@ bool sendDataPkt(packet *pkt, struct sockaddr_in relayAddr[]){
     uint idx = mdval(pkt->seq);
     gettimeofday(&sentPktTime[idx],NULL);
     sentPkt[idx] = pkt;
-    //TODO: log SEND event
+    logEntryNode le = {NN_CLIENT,et,0,DATA_PKT,pkt->seq,NN_CLIENT,(pkt->seq)%2,NULL};
+    addNewLogEntry(le,logFile);
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: SENT PKT: Seq No. %u of size %u bytes.\n",pkt->seq,pkt->size);
     return true;
@@ -137,6 +137,8 @@ bool receiveAckPkt(packet *pkt){
         fprintf(stderr,"recvfrom returned 0.\n");
         return false;
     }
+    logEntryNode le = {NN_CLIENT,E_RECV,0,ACK_PKT,pkt->seq,(pkt->seq)%2,NN_CLIENT,NULL};
+    addNewLogEntry(le,logFile);
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: ACK with seq %u received.\n",pkt->seq);
     return true;
@@ -149,7 +151,7 @@ bool advanceSendBase(struct sockaddr_in relayAddr[]){
             //can send additional packet
             if (morePacketsAvailable) {
                 packet *nextPkt = makeNextPktFromFile();
-                if (!sendDataPkt(nextPkt, relayAddr))
+                if (!sendDataPkt(nextPkt, relayAddr,E_SEND))
                     return false;
             }
         }
@@ -195,7 +197,7 @@ bool srSendFile(char *fileName, int relay1port, int relay2port, int cliPort) {
     for (int i = 0; i < WINDOW_SIZE; i++) {
         if (morePacketsAvailable) {
             nextPkt = makeNextPktFromFile();
-            if (!sendDataPkt(nextPkt, relayAddr))
+            if (!sendDataPkt(nextPkt, relayAddr,E_SEND))
                 return false;
 //            sleep(20);
         } else break;
@@ -245,9 +247,11 @@ bool srSendFile(char *fileName, int relay1port, int relay2port, int cliPort) {
                     fprintf(stderr,"[DEBUG]: Pkt with seq %u has %lf time remaining.\n",sentPkt[i]->seq,currTime);
                 if (currTime == 0) {
                     //timeout for this packet
+                    logEntryNode le = {NN_CLIENT,E_TO,0,DATA_PKT,sentPkt[i]->seq,NN_CLIENT,(sentPkt[i]->seq)%2,NULL};
+                    addNewLogEntry(le,logFile);
                     if(DEBUG_MODE)
                         fprintf(stderr,"[DEBUG]: Timeout for Pkt with seq %u.\n",sentPkt[i]->seq);
-                    if (!sendDataPkt(sentPkt[i], relayAddr))
+                    if (!sendDataPkt(sentPkt[i], relayAddr,E_RE))
                         return false;
                 }
                 else if (linit) {
@@ -277,9 +281,13 @@ int main(int argc, char *argv[]){
         fprintf(stderr,"Usage: %s <input file>\n", argv[0]);
         exit(1);
     }
+    logFile = fopen(TMP_CLIENT_LOG,"w");
     if(!srSendFile(argv[1], RELAY_NODE_1_PORT, RELAY_NODE_2_PORT,CLIENT_PORT)){
         fprintf(stderr,"Some Error Occurred!\n");
+        fclose(logFile);
         return -1;
     }
+    fclose(logFile);
+    prepareSortedLog();
     return 0;
 }

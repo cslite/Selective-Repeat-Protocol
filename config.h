@@ -19,6 +19,15 @@
 #define CLIENT_IP "127.0.0.1"
 #define CLIENT_PORT 8082
 
+#define LOG_FILE_NAME "logfile.txt"
+
+
+
 #define DEBUG_MODE 1
+#define TMP_CLIENT_LOG "log_client.txt"
+#define TMP_SERVER_LOG "log_server.txt"
+#define TMP_RELAY_1_LOG "log_relay1.txt"
+#define TMP_RELAY_2_LOG "log_relay2.txt"
+
 
 #endif //CNP2_CONFIG_H

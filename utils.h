@@ -4,8 +4,32 @@
 typedef unsigned int uint;
 #include "packet.h"
 #include <sys/time.h>
+#include <stdio.h>
 
+typedef enum{
+    NN_RELAY2,NN_RELAY1,NN_SERVER,NN_CLIENT
+} nodeName;
 
+typedef enum{
+    E_SEND,E_RECV,E_DROP,E_TO,E_RE
+} eventType;
+
+typedef struct logEntryNode logEntryNode;
+struct logEntryNode{
+    nodeName nn;
+    eventType e;
+    long long ts;
+    pktType pt;
+    uint seq;
+    nodeName src;
+    nodeName dst;
+    logEntryNode *next;
+};
+
+//nodeName nn, eventType e, long long ts, pktType pt, uint seq, nodeName src, nodeName dst
+void addNewLogEntry(logEntryNode len, FILE *fp);
+
+void prepareSortedLog();
 
 
 bool equals(char *s1, char *s2);

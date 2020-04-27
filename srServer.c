@@ -20,6 +20,7 @@ bool receivedPkt[WINDOW_SIZE];
 uint recvBase;
 int sockfd;
 uint lastPktSeqMod;
+FILE *logFile;
 
 
 void initServerGlobals(){
@@ -138,7 +139,8 @@ bool sendAckPkt(packet *pkt, struct sockaddr_in *cliAddr, uint *cliLen){
         fprintf(stderr,"sendto: Some Error, Return value 0.\n");
         return false;
     }
-    //TODO:log the SEND event from SERVER to RelayX
+    logEntryNode le = {NN_SERVER,E_SEND,0,ACK_PKT,pkt->seq,NN_SERVER,(pkt->seq)%2,NULL};
+    addNewLogEntry(le,logFile);
     return true;
 }
 
@@ -183,7 +185,8 @@ bool srReceiveFile(char *saveFileName, int port){
         //received a packet
         if(DEBUG_MODE)
             fprintf(stderr,"[DEBUG]: Pkt with seq %u received.\n",tmpPkt.seq);
-        //TODO: log the RECV packet event at SERVER from RelayX
+        logEntryNode le = {NN_SERVER,E_RECV,0,DATA_PKT,tmpPkt.seq,(tmpPkt.seq)%2,NN_SERVER,NULL};
+        addNewLogEntry(le,logFile);
         if(isPktInRecvWindow(tmpPkt.seq)){
             //this packet can be added to buffer
             if(DEBUG_MODE)
@@ -207,8 +210,10 @@ bool srReceiveFile(char *saveFileName, int port){
         }
         else{
             //Discard this packet, it is not of our use
-            //TODO: log the DROP packet event at the SERVER
-            fprintf(stderr,"srReceiveFile: Discarding Packet with Seq %u\n",tmpPkt.seq);
+            logEntryNode le = {NN_SERVER,E_DROP,0,tmpPkt.ptype,tmpPkt.seq,(tmpPkt.seq)%2,NN_SERVER,NULL};
+            addNewLogEntry(le,logFile);
+            if(DEBUG_MODE)
+                fprintf(stderr,"srReceiveFile: Discarding Packet with Seq %u\n",tmpPkt.seq);
         }
 
     }
@@ -222,11 +227,14 @@ int main(int argc, char *argv[]){
         fprintf(stderr,"Usage: %s <output file>\n", argv[0]);
         exit(1);
     }
+    logFile = fopen(TMP_SERVER_LOG,"w");
     if(!srReceiveFile(argv[1],SERVER_PORT)){
         fprintf(stderr,"Some Error Occurred!\n");
         close(outputFd);
         close(sockfd);
+        fclose(logFile);
         return -1;
     }
+    fclose(logFile);
     return 0;
 }

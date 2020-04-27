@@ -107,3 +107,22 @@ double findRemainingTime(struct timeval *startTime, struct timeval *remainingTim
         return 0;
 }
 
+void printLogEntry(logEntryNode len, FILE *fp){
+    //TODO
+}
+
+void addNewLogEntry(logEntryNode len, FILE *fp){
+    //nodeName nn, eventType e, long long ts, pktType pt, uint seq, nodeName src, nodeName dst
+    if(fp == NULL)
+        return;
+    struct timeval tmptime;
+    gettimeofday(&tmptime,NULL);
+    len.ts = ((tmptime.tv_sec)*1e6) + (tmptime.tv_usec);
+    fprintf(fp,"%u,%u,%lld,%u,%u,%u,%u\n",len.nn,len.e,len.ts,len.pt,len.seq,len.src,len.dst);
+    printLogEntry(len,stdout);
+}
+
+void prepareSortedLog(){
+    //TODO
+}
+
