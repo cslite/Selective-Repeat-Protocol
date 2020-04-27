@@ -1,3 +1,7 @@
+/*
+ * NAME: TUSSANK GUPTA
+ * ID: 2016B3A70528P
+ */
 #include "packet.h"
 #include "utils.h"
 #include <stdio.h>
@@ -13,6 +17,7 @@
 #include <time.h>
 #include "config.h"
 
+/*GLOBAL VARIABLES*/
 int fileSize;
 int sockfd;
 int inputFd;
@@ -25,6 +30,7 @@ bool morePacketsAvailable;
 struct timeval resetTimeoutValue;
 uint stopSeqNum;
 FILE *logFile;
+/*---*/
 
 void initClientGlobals(){
     nextSeqNum = 0;
@@ -66,8 +72,6 @@ void init2RelayAddr(struct sockaddr_in relayAddr[], int port1, int port2){
     relayAddr[1].sin_family = AF_INET;
     relayAddr[1].sin_port = htons(port2);
     relayAddr[1].sin_addr.s_addr = inet_addr(RELAY_NODE_2_IP);
-//    inet_pton(AF_INET,RELAY_NODE_2_IP,&(relayAddr[1].sin_addr));
-
 }
 
 packet *makeNextPktFromFile(){
@@ -115,11 +119,11 @@ bool sendDataPkt(packet *pkt, struct sockaddr_in relayAddr[], eventType et){
         perror("sendto");
         return false;
     }
+    logEntryNode le = {NN_CLIENT,et,DATA_PKT,pkt->seq,NN_CLIENT,(pkt->seq)%2};
+    addNewLogEntry(le,logFile);
     uint idx = mdval(pkt->seq);
     gettimeofday(&sentPktTime[idx],NULL);
     sentPkt[idx] = pkt;
-    logEntryNode le = {NN_CLIENT,et,DATA_PKT,pkt->seq,NN_CLIENT,(pkt->seq)%2};
-    addNewLogEntry(le,logFile);
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: SENT PKT: Seq No. %u of size %u bytes.\n",pkt->seq,pkt->size);
     return true;
@@ -201,7 +205,6 @@ bool srSendFile(char *fileName, int relay1port, int relay2port, int cliPort) {
             nextPkt = makeNextPktFromFile();
             if (!sendDataPkt(nextPkt, relayAddr,E_SEND))
                 return false;
-//            sleep(20);
         } else break;
     }
 
@@ -241,8 +244,6 @@ bool srSendFile(char *fileName, int relay1port, int relay2port, int cliPort) {
         if(DEBUG_MODE)
             fprintf(stderr,"[DEBUG]: Checking if there are any timeouts.\n");
         for (uint i = 0; i < WINDOW_SIZE; i++) {
-//            if(DEBUG_MODE)
-//                fprintf(stderr,"[DEBUG]: i = %u\n",i);
             if (sentPkt[i] != NULL) {
                 currTime = findRemainingTime(&sentPktTime[i], &currTimeVal, TIMEOUT_MILLISECONDS);
                 if(DEBUG_MODE)

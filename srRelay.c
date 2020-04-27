@@ -1,3 +1,7 @@
+/*
+ * NAME: TUSSANK GUPTA
+ * ID: 2016B3A70528P
+ */
 #include "packet.h"
 #include "utils.h"
 #include <stdio.h>
@@ -14,7 +18,7 @@
 #include <signal.h>
 #include "config.h"
 
-
+/*GLOBAL VARIABLES*/
 packet *pktStore[2*WINDOW_SIZE];
 struct timeval pktReceiveTime[2 * WINDOW_SIZE];
 double pktDelayTime[2*WINDOW_SIZE];
@@ -25,6 +29,7 @@ bool loopOver;
 int cntNonNullPkts;
 char *logFileName;
 FILE *logFile;
+/*---*/
 
 void handleSigint(int signo){
     loopOver = true;
@@ -124,6 +129,9 @@ bool processDataPkt(packet *pkt){
             forwardDataPkt(idx);
         pktStore[idx] = (packet *)malloc(sizeof(packet));
         *(pktStore[idx]) = *pkt;
+        for(uint i=0; i<(pkt->size);i++){
+            (pktStore[idx]->payload)[i] = (pkt->payload)[i];
+        }
         pktDelayTime[idx] = dlay;
         gettimeofday(&(pktReceiveTime[idx]),NULL);
         if(DEBUG_MODE)
@@ -235,7 +243,7 @@ bool runRelay(uint relayPort){
                             leastTime = currTime;
                             leastTimeVal = currTimeVal;
                         }
-                    } else {
+                    } else {/*---*/
                         linit = true;
                         leastTime = currTime;
                         leastTimeVal = currTimeVal;
@@ -254,7 +262,7 @@ bool runRelay(uint relayPort){
 
 int main(int argc, char *argv[]){
     if(argc != 2) {
-        fprintf(stderr,"Usage: %s <relay node number(1 or 2)>\n", argv[0]);
+        fprintf(stderr,"Usage: %s 1\nor\nUsage: %s 2\n", argv[0],argv[0]);
         exit(1);
     }
     signal(SIGINT,handleSigint);
@@ -272,6 +280,7 @@ int main(int argc, char *argv[]){
         logFileName = TMP_RELAY_2_LOG;
         logFile = fopen(logFileName,"w");
         fclose(logFile);
+        logFile = NULL;
         if(!runRelay(RELAY_NODE_2_PORT)){
             close(sockfd);
             fprintf(stderr,"Some error occurred.\n");
@@ -279,7 +288,7 @@ int main(int argc, char *argv[]){
         }
     }
     else{
-        fprintf(stderr,"Usage: %s <relay node number(1 or 2)>\n", argv[0]);
+        fprintf(stderr,"Usage: %s 1\nor\nUsage: %s 2\n", argv[0],argv[0]);
         exit(1);
     }
 

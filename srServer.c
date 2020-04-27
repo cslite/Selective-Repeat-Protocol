@@ -1,3 +1,7 @@
+/*
+ * NAME: TUSSANK GUPTA
+ * ID: 2016B3A70528P
+ */
 #include "packet.h"
 #include "utils.h"
 #include <stdio.h>
@@ -12,16 +16,18 @@
 #include <time.h>
 #include "config.h"
 
+/*GLOBAL VARIABLES*/
 int outputFd;
 bool receivedLastPkt;
 bool pendingLastPktWrite;
 char oooBuffer[WINDOW_SIZE][PACKET_SIZE+1];
+uint pktSize[WINDOW_SIZE];
 bool receivedPkt[WINDOW_SIZE];
 uint recvBase;
 int sockfd;
 uint lastPktSeqMod;
 FILE *logFile;
-
+/*---*/
 
 void initServerGlobals(){
     receivedLastPkt = false;
@@ -38,8 +44,6 @@ bool initSocket(struct sockaddr_in *sa, int servPort){
         fprintf(stderr,"initSocket: Error in opening socket.\n");
         return false;
     }
-    int en = 1;
-//    setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &en, sizeof(int));
     sa->sin_family = AF_INET;
     sa->sin_addr.s_addr = htonl(INADDR_ANY);
     sa->sin_port = htons(servPort);
@@ -86,7 +90,10 @@ bool loadDataOnBuffer(packet *pkt){
         return false;
     }
     receivedPkt[seq] = true;
-    strcpy(oooBuffer[seq],pkt->payload);
+    pktSize[seq] = pkt->size;
+    for(uint i=0; i< (pkt->size); i++){
+        oooBuffer[seq][i] = (pkt->payload)[i];
+    }
     return true;
 }
 
@@ -107,7 +114,7 @@ bool processPkt(packet *pkt){
             if(receivedPkt[i]){
                 recvBase = md2add(recvBase,1);
                 receivedPkt[i] = false;
-                write(outputFd,oooBuffer[i],strlen(oooBuffer[i]));
+                write(outputFd,oooBuffer[i],pktSize[i]);
                 if(receivedLastPkt && lastPktSeqMod == i)
                     pendingLastPktWrite = false;
             }
@@ -173,7 +180,6 @@ bool srReceiveFile(char *saveFileName, int port){
         packet tmpPkt;
         if(DEBUG_MODE)
             fprintf(stderr,"[DEBUG]: Server ready to receive packet.\n");
-//        fprintf(stderr,"we have sockfd = %d\n",sockfd);
         bzero(&cliAddr,sizeof(cliAddr));
         cliLen = sizeof(cliAddr);
         int nread = recvfrom(sockfd,&tmpPkt,sizeof(packet),0,(struct sockaddr *)&cliAddr,&cliLen);
