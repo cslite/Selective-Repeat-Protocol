@@ -139,7 +139,7 @@ bool sendAckPkt(packet *pkt, struct sockaddr_in *cliAddr, uint *cliLen){
         fprintf(stderr,"sendto: Some Error, Return value 0.\n");
         return false;
     }
-    logEntryNode le = {NN_SERVER,E_SEND,0,ACK_PKT,pkt->seq,NN_SERVER,(pkt->seq)%2,NULL};
+    logEntryNode le = {NN_SERVER,E_SEND,ACK_PKT,pkt->seq,NN_SERVER,(pkt->seq)%2};
     addNewLogEntry(le,logFile);
     return true;
 }
@@ -166,6 +166,9 @@ bool srReceiveFile(char *saveFileName, int port){
 
     initServerGlobals();
 
+    fprintf(stdout,"%-11s%-13s%-19s%-13s%-10s%-9s%-9s\n","Node Name","Event Type","Timestamp","Packet Type","Seq. No.","Source","Dest");
+
+
     while(pendingLastPktWrite){
         packet tmpPkt;
         if(DEBUG_MODE)
@@ -185,7 +188,7 @@ bool srReceiveFile(char *saveFileName, int port){
         //received a packet
         if(DEBUG_MODE)
             fprintf(stderr,"[DEBUG]: Pkt with seq %u received.\n",tmpPkt.seq);
-        logEntryNode le = {NN_SERVER,E_RECV,0,DATA_PKT,tmpPkt.seq,(tmpPkt.seq)%2,NN_SERVER,NULL};
+        logEntryNode le = {NN_SERVER,E_RECV,DATA_PKT,tmpPkt.seq,(tmpPkt.seq)%2,NN_SERVER};
         addNewLogEntry(le,logFile);
         if(isPktInRecvWindow(tmpPkt.seq)){
             //this packet can be added to buffer
@@ -210,7 +213,7 @@ bool srReceiveFile(char *saveFileName, int port){
         }
         else{
             //Discard this packet, it is not of our use
-            logEntryNode le = {NN_SERVER,E_DROP,0,tmpPkt.ptype,tmpPkt.seq,(tmpPkt.seq)%2,NN_SERVER,NULL};
+            logEntryNode le = {NN_SERVER,E_DROP,tmpPkt.ptype,tmpPkt.seq,(tmpPkt.seq)%2,NN_SERVER};
             addNewLogEntry(le,logFile);
             if(DEBUG_MODE)
                 fprintf(stderr,"srReceiveFile: Discarding Packet with Seq %u\n",tmpPkt.seq);

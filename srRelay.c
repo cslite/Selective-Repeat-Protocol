@@ -29,7 +29,8 @@ FILE *logFile;
 void handleSigint(int signo){
     loopOver = true;
     close(sockfd);
-    fclose(logFile);
+    if(logFile)
+        fclose(logFile);
     fprintf(stderr,"Exiting...\n");
     exit(1);
 }
@@ -40,6 +41,14 @@ void initRelayGlobals(){
     convMilliSec2Timeval(TIMEOUT_MILLISECONDS,&resetTimeoutValue);
     loopOver = false;
     cntNonNullPkts = 0;
+}
+
+void addNewRelayLogEntry(logEntryNode len){
+    logFile = fopen(logFileName,"a");
+    if(!logFile) logFile = fopen(logFileName,"w");
+    addNewLogEntry(len,logFile);
+    fclose(logFile);
+    logFile = NULL;
 }
 
 bool initRelaySocket(struct sockaddr_in *sa, int relayPort){
@@ -88,8 +97,8 @@ bool forwardDataPkt(uint idx){
         pktStore[idx] = NULL;
         return false;
     }
-    logEntryNode le = {(pktStore[idx]->seq)%2,E_SEND,0,DATA_PKT,pktStore[idx]->seq,(pktStore[idx]->seq)%2,NN_SERVER,NULL};
-    addNewLogEntry(le,logFile);
+    logEntryNode le = {(pktStore[idx]->seq)%2,E_SEND,DATA_PKT,pktStore[idx]->seq,(pktStore[idx]->seq)%2,NN_SERVER};
+    addNewRelayLogEntry(le);
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: Sent DATA Pkt with seq %u to Server.\n",pktStore[idx]->seq);
     free(pktStore[idx]);
@@ -101,8 +110,8 @@ bool forwardDataPkt(uint idx){
 bool processDataPkt(packet *pkt){
     int x = rand()%100;
     if(x <= PACKET_DROP_RATE){
-        logEntryNode le = {(pkt->seq)%2,E_DROP,0,DATA_PKT,pkt->seq,NN_CLIENT,(pkt->seq)%2,NULL};
-        addNewLogEntry(le,logFile);
+        logEntryNode le = {(pkt->seq)%2,E_DROP,DATA_PKT,pkt->seq,NN_CLIENT,(pkt->seq)%2};
+        addNewRelayLogEntry(le);
         if(DEBUG_MODE)
             fprintf(stderr,"[DEBUG]: Dropping pkt with seq %u (randVal = %d).\n",pkt->seq,x);
         return true;
@@ -134,8 +143,8 @@ bool forwardACKPkt(packet *pkt){
         fprintf(stderr,"sendto: Some Error, Return value 0.\n");
         return false;
     }
-    logEntryNode le = {(pkt->seq)%2,E_SEND,0,ACK_PKT,pkt->seq,(pkt->seq)%2,NN_CLIENT,NULL};
-    addNewLogEntry(le,logFile);
+    logEntryNode le = {(pkt->seq)%2,E_SEND,ACK_PKT,pkt->seq,(pkt->seq)%2,NN_CLIENT};
+    addNewRelayLogEntry(le);
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: Sent ACK with seq %u to Client.\n",pkt->seq);
     return true;
@@ -156,15 +165,20 @@ bool runRelay(uint relayPort){
 
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: Relay ready.\n");
+    fprintf(stdout,"%-11s%-13s%-19s%-13s%-10s%-9s%-9s\n","Node Name","Event Type","Timestamp","Packet Type","Seq. No.","Source","Dest");
+
 
     //just for starting
     struct timeval timeRemaining = resetTimeoutValue;
     struct sockaddr_in tmpAddr;
     uint tmpLen;
     while(1){
-        logFile = fopen(logFileName,"a");
         rset = rset0;
-        int nsel = select(sockfd+1,&rset,NULL,NULL,&timeRemaining);
+        int nsel;
+        if(cntNonNullPkts > 0)
+            nsel = select(sockfd+1,&rset,NULL,NULL,&timeRemaining);
+        else
+            nsel = select(sockfd+1,&rset,NULL,NULL,NULL);
         if(loopOver)
             break;
         if(FD_ISSET(sockfd,&rset)){
@@ -183,16 +197,16 @@ bool runRelay(uint relayPort){
                 return false;
             }
             if(tmpPkt.ptype == ACK_PKT){
-                logEntryNode le = {(tmpPkt.seq)%2,E_RECV,0,ACK_PKT,tmpPkt.seq,NN_SERVER,(tmpPkt.seq)%2,NULL};
-                addNewLogEntry(le,logFile);
+                logEntryNode le = {(tmpPkt.seq)%2,E_RECV,ACK_PKT,tmpPkt.seq,NN_SERVER,(tmpPkt.seq)%2};
+                addNewRelayLogEntry(le);
                 if(DEBUG_MODE)
                     fprintf(stderr,"[DEBUG]: ACK Packet with seq %u found.\n",tmpPkt.seq);
                 if(!forwardACKPkt(&tmpPkt))
                     return false;
             }
             else{
-                logEntryNode le = {(tmpPkt.seq)%2,E_RECV,0,DATA_PKT,tmpPkt.seq,NN_CLIENT,(tmpPkt.seq)%2,NULL};
-                addNewLogEntry(le,logFile);
+                logEntryNode le = {(tmpPkt.seq)%2,E_RECV,DATA_PKT,tmpPkt.seq,NN_CLIENT,(tmpPkt.seq)%2};
+                addNewRelayLogEntry(le);
                 if(DEBUG_MODE)
                     fprintf(stderr,"[DEBUG]: DATA Packet with seq %u found.\n",tmpPkt.seq);
                 if(!processDataPkt(&tmpPkt))
@@ -232,7 +246,6 @@ bool runRelay(uint relayPort){
             if(DEBUG_MODE)
                 fprintf(stderr,"[DEBUG]: Next return will be within %lf milliseconds.\n",leastTime);
         }
-        fclose(logFile);
         if(loopOver)
             break;
     }

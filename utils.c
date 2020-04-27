@@ -107,22 +107,139 @@ double findRemainingTime(struct timeval *startTime, struct timeval *remainingTim
         return 0;
 }
 
-void printLogEntry(logEntryNode len, FILE *fp){
-    //TODO
+char *getNNtext(nodeName nn){
+    switch(nn){
+        case NN_SERVER:
+            return "SERVER";
+        case NN_CLIENT:
+            return "CLIENT";
+        case NN_RELAY1:
+            return "RELAY1";
+        case NN_RELAY2:
+            return "RELAY2";
+    }
+}
+
+void printLogEntry(logEntryNode *len, FILE *fp){
+    char *nn, *src, *dst, *pt, *et;
+    nn = getNNtext(len->nn);
+    src = getNNtext(len->src);
+    dst = getNNtext(len->dst);
+    pt = (len->pt == ACK_PKT) ? "ACK" : "DATA";
+    switch(len->e){
+        case E_SEND:
+            et = "S";
+            break;
+        case E_RECV:
+            et = "R";
+            break;
+        case E_DROP:
+            et = "D";
+            break;
+        case E_TO:
+            et = "TO";
+            break;
+        case E_RE:
+            et = "RE";
+            break;
+    }
+    fprintf(fp,"%-11s%-13s%-19s%-13s%-10u%-9s%-9s\n",nn,et,len->ltime,pt,len->seq,src,dst);
+
 }
 
 void addNewLogEntry(logEntryNode len, FILE *fp){
     //nodeName nn, eventType e, long long ts, pktType pt, uint seq, nodeName src, nodeName dst
     if(fp == NULL)
         return;
+
+    char ms[8];
+    time_t curr = time(NULL);
+    struct tm* timeptr;
     struct timeval tmptime;
+
+    timeptr = localtime(&curr);
     gettimeofday(&tmptime,NULL);
+    strftime(len.ltime,20,"%H:%M:%S",timeptr);
+    sprintf(ms,".%06ld",tmptime.tv_usec);
+    strcat(len.ltime,ms);
     len.ts = ((tmptime.tv_sec)*1e6) + (tmptime.tv_usec);
-    fprintf(fp,"%u,%u,%lld,%u,%u,%u,%u\n",len.nn,len.e,len.ts,len.pt,len.seq,len.src,len.dst);
-    printLogEntry(len,stdout);
+    fprintf(fp,"%u,%u,%u,%u,%u,%u,%lld,%s\n",len.nn,len.e,len.pt,len.seq,len.src,len.dst,len.ts,len.ltime);
+    printLogEntry(&len,stdout);
+}
+
+void addEntryToList(logEntryNode **head, logEntryNode len){
+    logEntryNode *node = (logEntryNode *)(malloc(sizeof(logEntryNode)));
+    *node = len;
+    node->next = NULL;
+    if(*head == NULL){
+        *head = node;
+    }
+    else{
+        if((*head)->ts >= len.ts){
+            node->next = *head;
+            *head = node;
+        }
+        else{
+            logEntryNode *ptr = *head;
+            while(ptr != NULL && (len.ts >= ptr->ts)){
+                if(ptr->next != NULL && len.ts <= ptr->next->ts){
+                    node->next = ptr->next;
+                    ptr->next = node;
+                    break;
+                }
+                else if(ptr->next == NULL){
+                    ptr->next = node;
+                    break;
+                }
+                ptr = ptr->next;
+            }
+        }
+    }
+}
+
+void addFileToList(logEntryNode **head, FILE *fp){
+    if(fp != NULL){
+        logEntryNode tmp;
+        while((fscanf(fp,"%u,%u,%u,%u,%u,%u,%lld,%s\n",&tmp.nn,&tmp.e,&tmp.pt,&tmp.seq,&tmp.src,&tmp.dst,&tmp.ts,tmp.ltime)) == 8){
+            addEntryToList(head,tmp);
+        }
+        fclose(fp);
+    }
 }
 
 void prepareSortedLog(){
-    //TODO
+    logEntryNode *head = NULL;
+
+    FILE *cli = fopen(TMP_CLIENT_LOG,"r");
+    FILE *ser = fopen(TMP_SERVER_LOG,"r");
+    FILE *rl1 = fopen(TMP_RELAY_1_LOG,"r");
+    FILE *rl2 = fopen(TMP_RELAY_2_LOG,"r");
+
+    addFileToList(&head,cli);
+    addFileToList(&head,ser);
+    addFileToList(&head,rl1);
+    addFileToList(&head,rl2);
+
+    remove(TMP_CLIENT_LOG);
+    remove(TMP_SERVER_LOG);
+    remove(TMP_RELAY_1_LOG);
+    remove(TMP_RELAY_2_LOG);
+
+    FILE *logFile = fopen(LOG_FILE_NAME,"w");
+
+    fprintf(logFile,"%-11s%-13s%-19s%-13s%-10s%-9s%-9s\n","Node Name","Event Type","Timestamp","Packet Type","Seq. No.","Source","Dest");
+
+    logEntryNode *ptr = head;
+    while(ptr != NULL){
+        logEntryNode *tmpNext = ptr->next;
+        printLogEntry(ptr,logFile);
+        free(ptr);
+        ptr = tmpNext;
+    }
+
+    fclose(logFile);
+
+    fprintf(stdout,"\n[INFO]: Sorted Log file has been generated and stored in %s.\n",LOG_FILE_NAME);
+
 }
 

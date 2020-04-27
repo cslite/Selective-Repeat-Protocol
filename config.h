@@ -23,7 +23,7 @@
 
 
 
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 #define TMP_CLIENT_LOG "log_client.txt"
 #define TMP_SERVER_LOG "log_server.txt"
 #define TMP_RELAY_1_LOG "log_relay1.txt"

@@ -18,11 +18,12 @@ typedef struct logEntryNode logEntryNode;
 struct logEntryNode{
     nodeName nn;
     eventType e;
-    long long ts;
     pktType pt;
     uint seq;
     nodeName src;
     nodeName dst;
+    long long ts;
+    char ltime[30];
     logEntryNode *next;
 };
 

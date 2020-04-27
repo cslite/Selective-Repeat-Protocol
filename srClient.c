@@ -118,7 +118,7 @@ bool sendDataPkt(packet *pkt, struct sockaddr_in relayAddr[], eventType et){
     uint idx = mdval(pkt->seq);
     gettimeofday(&sentPktTime[idx],NULL);
     sentPkt[idx] = pkt;
-    logEntryNode le = {NN_CLIENT,et,0,DATA_PKT,pkt->seq,NN_CLIENT,(pkt->seq)%2,NULL};
+    logEntryNode le = {NN_CLIENT,et,DATA_PKT,pkt->seq,NN_CLIENT,(pkt->seq)%2};
     addNewLogEntry(le,logFile);
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: SENT PKT: Seq No. %u of size %u bytes.\n",pkt->seq,pkt->size);
@@ -127,7 +127,7 @@ bool sendDataPkt(packet *pkt, struct sockaddr_in relayAddr[], eventType et){
 
 bool receiveAckPkt(packet *pkt){
     struct sockaddr_in cliAddr;
-    unsigned int clilen;
+    unsigned int clilen = sizeof(cliAddr);
     int nread;
     if((nread = recvfrom(sockfd,pkt,sizeof(packet),0,(struct sockaddr*)&cliAddr,&clilen)) < 0){
         perror("recvfrom");
@@ -137,7 +137,7 @@ bool receiveAckPkt(packet *pkt){
         fprintf(stderr,"recvfrom returned 0.\n");
         return false;
     }
-    logEntryNode le = {NN_CLIENT,E_RECV,0,ACK_PKT,pkt->seq,(pkt->seq)%2,NN_CLIENT,NULL};
+    logEntryNode le = {NN_CLIENT,E_RECV,ACK_PKT,pkt->seq,(pkt->seq)%2,NN_CLIENT};
     addNewLogEntry(le,logFile);
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: ACK with seq %u received.\n",pkt->seq);
@@ -193,6 +193,8 @@ bool srSendFile(char *fileName, int relay1port, int relay2port, int cliPort) {
     if(DEBUG_MODE)
         fprintf(stderr,"[DEBUG]: Client ready to send initial packets.\n");
 
+    fprintf(stdout,"%-11s%-13s%-19s%-13s%-10s%-9s%-9s\n","Node Name","Event Type","Timestamp","Packet Type","Seq. No.","Source","Dest");
+
     //send initial packets
     for (int i = 0; i < WINDOW_SIZE; i++) {
         if (morePacketsAvailable) {
@@ -247,7 +249,7 @@ bool srSendFile(char *fileName, int relay1port, int relay2port, int cliPort) {
                     fprintf(stderr,"[DEBUG]: Pkt with seq %u has %lf time remaining.\n",sentPkt[i]->seq,currTime);
                 if (currTime == 0) {
                     //timeout for this packet
-                    logEntryNode le = {NN_CLIENT,E_TO,0,DATA_PKT,sentPkt[i]->seq,NN_CLIENT,(sentPkt[i]->seq)%2,NULL};
+                    logEntryNode le = {NN_CLIENT,E_TO,DATA_PKT,sentPkt[i]->seq,NN_CLIENT,(sentPkt[i]->seq)%2};
                     addNewLogEntry(le,logFile);
                     if(DEBUG_MODE)
                         fprintf(stderr,"[DEBUG]: Timeout for Pkt with seq %u.\n",sentPkt[i]->seq);
