@@ -1,9 +1,3 @@
-| Computer Networks Assignment- Q2	|
-| Submitted by: 					|
-| Tussank Gupta					 	|
-| 2016B3A70528P					 	|
--------------------------------------
-
 -----
 Files
 -----
